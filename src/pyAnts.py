@@ -17,11 +17,12 @@ class _Target(object):
         self.content_length = self._get_length()
 
     def _get_length(self):
-        headers = {"User-Agent": "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.3; WOW64; Trident/7.\
-                                 0; .NET4.0E; .NET4.0C; .NET CLR 3.5.30729; .NET CLR 2.0.50727; .NET \
-                                 CLR 3.0.30729)"}
-        res = requests.get(self.url, headers)
-        return int(res.headers['Content-Length'])
+        try:
+            res = requests.head(self.url)
+            return int(res.headers['Content-Length'])
+        except requests.HTTPError as e:
+            print(e)
+            exit(1)
 
 
 def _split(length, num):
@@ -33,7 +34,7 @@ def _split(length, num):
     """
     offset = length//num
     slices = [[_i*offset, _i*offset+offset] for _i in range(num)]
-    slices[-1][-1] = ''
+    slices[-1][-1] = length - 1
     return slices
 
 
@@ -78,10 +79,13 @@ def _download(url, filename, q):
         headers = _build_headers(range_)
         try:
             res = requests.get(url, headers=headers)
-            with _mutex:
-                with open(filename, 'rb+') as file:
-                    file.seek(range_[0])
-                    file.write(res.content)
+            if len(res.content) == range_[1] - range_[0] + 1:
+                with _mutex:
+                    with open(filename, 'rb+') as file:
+                        file.seek(range_[0])
+                        file.write(res.content)
+            else:
+                q.put(range_)
         except requests.HTTPError:
             q.put(range_)
         finally:
