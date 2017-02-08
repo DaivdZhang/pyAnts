@@ -18,7 +18,8 @@ class _Target(object):
 
     def _get_length(self):
         headers = {"User-Agent": "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.3; WOW64; Trident/7.\
-                   0; .NET4.0E; .NET4.0C; .NET CLR 3.5.30729; .NET CLR 2.0.50727; .NET CLR 3.0.30729)"}
+                                 0; .NET4.0E; .NET4.0C; .NET CLR 3.5.30729; .NET CLR 2.0.50727; .NET \
+                                 CLR 3.0.30729)"}
         res = requests.get(self.url, headers)
         return int(res.headers['Content-Length'])
 
@@ -73,16 +74,16 @@ def _download(url, filename, q):
     :return:
     """
     while not q.empty():
-        _range = q.get()
-        headers = _build_headers(_range)
+        range_ = q.get()
+        headers = _build_headers(range_)
         try:
             res = requests.get(url, headers=headers)
             with _mutex:
                 with open(filename, 'rb+') as file:
-                    file.seek(_range[0])
+                    file.seek(range_[0])
                     file.write(res.content)
         except requests.HTTPError:
-            q.put(_range)
+            q.put(range_)
         finally:
             q.task_done()
 
@@ -98,7 +99,7 @@ def worker(url, splits=2, path=''):
     target = _Target(url, splits)
     filename = path + target.filename
     if not os.path.isfile(path+target.filename):
-        with open(filename):
+        with open(filename, 'wb'):
             pass
     print("target size: %.3f MB\n" % (target.content_length/1024/1024))
 
