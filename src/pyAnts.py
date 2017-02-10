@@ -11,7 +11,7 @@ _mutex = threading.Lock()
 
 
 class _Target(object):
-    def __init__(self, url, splits, filename=None):
+    def __init__(self, url, splits, filename=None, thread=1):
         """
 
         :type url: str
@@ -25,7 +25,8 @@ class _Target(object):
         """
         self.url = url
         self.filename = filename if filename else url.split('/')[-1]
-        self.thread_num = splits
+        self.splits = splits
+        self.thread = thread
         self.content_length = self._get_length()
 
     def _get_length(self):
@@ -41,19 +42,19 @@ class _Target(object):
             exit(1)
 
 
-def _split(length, num):
+def _split(length, splits):
     """
 
     :type length: int
         the content length of target
 
-    :type num: int
-        thread num
+    :type splits: int
+        slice num
 
     :rtype: list
     """
-    offset = length//num
-    slices = [[i*offset, i*offset+offset] for i in range(num)]
+    offset = length//splits
+    slices = [[i*offset, i*offset+offset] for i in range(splits)]
     slices[-1][-1] = length - 1
     return slices
 
@@ -90,7 +91,14 @@ def _create_queue(length, num):
     return q
 
 
-def _download(url, filename, q):
+def _save(filename, content, offset):
+    with _mutex:
+        with open(filename, 'rb+') as file:
+            file.seek(offset)
+            file.write(content)
+
+
+def _download(url, filename, q, buffer_size=8388608):
     """
 
     :type url: str
@@ -104,15 +112,16 @@ def _download(url, filename, q):
     while not q.empty():
         range_ = q.get()
         headers = _build_headers(range_)
+        content = b''
         try:
-            res = requests.get(url, headers=headers)
-            if len(res.content) == range_[1] - range_[0] + 1:
-                with _mutex:
-                    with open(filename, 'rb+') as file:
-                        file.seek(range_[0])
-                        file.write(res.content)
-            else:
-                q.put(range_)
+            res = requests.get(url, headers=headers, stream=True)
+            for i in res.iter_content(chunk_size=1024):
+                content += i
+                if len(content) > buffer_size:
+                    _save(filename, content, range_[0])
+                    range_[0] += len(content)
+                    content = b''
+            _save(filename, content, range_[0])
         except requests.HTTPError:
             q.put(range_)
         finally:
@@ -131,9 +140,9 @@ def worker(target, path=None):
         with open(f1, 'wb'):
             pass
 
-    work_queue = _create_queue(target.content_length, target.thread_num)
+    work_queue = _create_queue(target.content_length, target.splits)
     threads = []
-    for i in range(target.thread_num):
+    for i in range(target.thread):
         threads.append(threading.Thread(target=_download, args=(target.url, f1, work_queue)))
     for t in threads:
         t.daemon = True
@@ -141,13 +150,13 @@ def worker(target, path=None):
     work_queue.join()
 
 if __name__ == "__main__":
-    _url, _splits, _path, _filename = args_.url, args_.splits, args_.path, args_.filename
+    _url, _splits, _thread, _path, _filename = args_
 
-    if _splits > 4:  # avoid ddos server
+    if _thread > 4:  # avoid ddos server
         raise ValueError("too many threads!\n DO NOT SURPASS 4 THREADS!\n")
 
-    _target = _Target(_url, _splits, _filename)
+    _target = _Target(_url, _splits, _filename, _thread)
 
-    print("target size: %.3f MB\n" % (_target.content_length/1024/1024))
+    print("target size: %.3f MB" % (_target.content_length/1024/1024))
     worker(_target, _path)
-    print("%s downloaded! at %s\n" % (_target.filename, _path))
+    print("%s downloaded! at %s" % (_target.filename, _path))
