@@ -1,2 +1,2 @@
 # pyAnts
-### a simple multi-thread download tool
+### a simple multi-threading download tool
