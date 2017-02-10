@@ -2,6 +2,7 @@ import requests
 import threading
 import queue
 import os
+from cli_parse import args as args_
 
 __all__ = ["worker"]
 
@@ -92,27 +93,31 @@ def _download(url, filename, q):
             q.task_done()
 
 
-def worker(url, splits=2, path=''):
+def worker(target, path=None):
     """
 
-    :type url: str
-    :type splits: int
+    :type target: _Target
     :type path: str
     :return:
     """
-    target = _Target(url, splits)
-    filename = path + target.filename
+    f1 = path + target.filename
     if not os.path.isfile(path+target.filename):
-        with open(filename, 'wb'):
+        with open(f1, 'wb'):
             pass
-    print("target size: %.3f MB\n" % (target.content_length/1024/1024))
 
-    work_queue = _create_queue(target.content_length, splits)
+    work_queue = _create_queue(target.content_length, target.thread_num)
     threads = []
-    for i in range(splits):
-        threads.append(threading.Thread(target=_download, args=(url, filename, work_queue)))
+    for i in range(target.thread_num):
+        threads.append(threading.Thread(target=_download, args=(target.url, f1, work_queue)))
     for t in threads:
         t.setDaemon(True)
         t.start()
     work_queue.join()
-    print("%s downloaded! at %s\n" % (target.filename, path))
+
+if __name__ == "__main__":
+    _url, _splits, _path, _filename = args_.url, args_.splits, args_.path, args_.filename
+    _target = _Target(_url, _splits, _filename)
+
+    print("target size: %.3f MB\n" % (_target.content_length / 1024 / 1024))
+    worker(_target, _path)
+    print("%s downloaded! at %s\n" % (_target.filename, _path))
