@@ -157,10 +157,14 @@ def _download(url, filename, q, buffer_size=8388608):
             q.task_done()
 
 
-def worker(target, path=None):
+def run(target, q, path=None):
     """
 
     :type target: _Target
+
+    :type q: queue.Queue
+        store splits
+
     :type path: str
         dir to save file
     """
@@ -169,16 +173,13 @@ def worker(target, path=None):
         with open(f1, 'wb'):
             pass
 
-    work_queue = _create_queue(target.content_length, target.splits)
-
     threads = [threading.Thread(target=progressbar, args=(f1, target.content_length, WIDGETS))]
     for i in range(target.thread):
-        t = threading.Thread(target=_download, args=(target.url, f1, work_queue))
+        t = threading.Thread(target=_download, args=(target.url, f1, q))
         threads.append(t)
     for t in threads:
         t.daemon = True
         t.start()
-    work_queue.join()
 
 if __name__ == "__main__":
     _url, _splits, _thread, _path, _filename = args_
@@ -187,8 +188,13 @@ if __name__ == "__main__":
         raise ValueError("too many threads!\n DO NOT SURPASS 4 THREADS!\n")
 
     _target = _Target(_url, _splits, _filename, _thread)
+    _work_queue = _create_queue(_target.content_length, _target.splits)
 
+    print("filename: %s" % _target.filename)
     print("target size: %.3f MB" % (_target.content_length/1024/1024))
-    worker(_target, _path)
+    run(_target, _work_queue, _path)
+    _work_queue.join()
     time.sleep(1)
-    print("\n%s downloaded! at %s" % (_target.filename, _path))
+    if _path == '':
+        _path = os.path.abspath('.')
+    print("\ndownloaded! at %s" % _path)
