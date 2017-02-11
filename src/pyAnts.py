@@ -20,10 +20,13 @@ class _Target(object):
             url to download
 
         :type splits: int
-            the num of threads to download
+            slice target file to this num
 
         :type filename: str
             using this name to save file
+
+        :type thread: int
+            the num of threads to download
         """
         self.url = url
         self.filename = filename if filename else url.split('/')[-1]
@@ -65,6 +68,8 @@ def _build_headers(range_):
     """
 
     :type range_: list
+        every split's range_
+
     :rtype: dict
     """
     headers = {"accept-encoding": '*',
@@ -95,6 +100,19 @@ def _create_queue(length, num):
 
 
 def _save(filename, content, offset):
+    """
+
+    :type filename: str
+        refer to _Target.filename
+
+    :type content: bytes
+        content of target
+
+    :type offset: int
+        location to write content
+
+    :rtype:
+    """
     with _mutex:
         with open(filename, 'rb+') as file:
             file.seek(offset)
@@ -111,6 +129,9 @@ def _download(url, filename, q, buffer_size=8388608):
         refer to _Target.filename
 
     :type q: queue.Queue
+        store splits
+
+    :type buffer_size: int
     """
     content = b''
     while not q.empty():
