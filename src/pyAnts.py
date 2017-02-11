@@ -2,10 +2,12 @@ import requests
 import threading
 import queue
 import os
+import time
 from cli_parse import args_
+from progressbar import progressbar, WIDGETS
+
 
 __all__ = ["worker"]
-
 
 _mutex = threading.Lock()
 
@@ -87,6 +89,7 @@ def _create_queue(length, num):
     s = _split(length, num)
     q = queue.Queue()
     for _ in s:
+        _.append(3)  # retry = 3
         q.put(_)
     return q
 
@@ -109,10 +112,14 @@ def _download(url, filename, q, buffer_size=8388608):
 
     :type q: queue.Queue
     """
+    content = b''
     while not q.empty():
         range_ = q.get()
+        retry = range_.pop()
+        if retry == 0:
+            raise requests.HTTPError
+
         headers = _build_headers(range_)
-        content = b''
         try:
             res = requests.get(url, headers=headers, stream=True)
             for i in res.iter_content(chunk_size=1024):
@@ -120,11 +127,12 @@ def _download(url, filename, q, buffer_size=8388608):
                 if len(content) > buffer_size:
                     _save(filename, content, range_[0])
                     range_[0] += len(content)
-                    content = b''
             _save(filename, content, range_[0])
         except requests.HTTPError:
+            range_.append(retry - 1)
             q.put(range_)
         finally:
+            content = b''
             q.task_done()
 
 
@@ -141,9 +149,11 @@ def worker(target, path=None):
             pass
 
     work_queue = _create_queue(target.content_length, target.splits)
-    threads = []
+
+    threads = [threading.Thread(target=progressbar, args=(f1, target.content_length, WIDGETS))]
     for i in range(target.thread):
-        threads.append(threading.Thread(target=_download, args=(target.url, f1, work_queue)))
+        t = threading.Thread(target=_download, args=(target.url, f1, work_queue))
+        threads.append(t)
     for t in threads:
         t.daemon = True
         t.start()
@@ -159,4 +169,5 @@ if __name__ == "__main__":
 
     print("target size: %.3f MB" % (_target.content_length/1024/1024))
     worker(_target, _path)
-    print("%s downloaded! at %s" % (_target.filename, _path))
+    time.sleep(1)
+    print("\n%s downloaded! at %s" % (_target.filename, _path))
